@@ -1,0 +1,126 @@
+{
+Example for GSM_GNSS Click
+
+    Date          : jan 2019.
+    Author        : Katarina Perendic
+
+Test configuration PIC32 :
+    
+    MCU                : P32MX795F512L
+    Dev. Board         : EasyPIC Fusion v7
+    PIC32 Compiler ver : v4.0.0.0
+
+---
+
+Description :
+
+The application is composed of three sections :
+
+- System Initialization - Initializes all necessary GPIO pins, UART used for
+the communcation with GSM/GNSS module and UART used for infromation logging
+- Application Initialization - Initializes driver, power on module and sends few
+command for the default module configuration
+- Application Task - running in parallel core state machine and checks for call flag. 
+If call detected parser will hang up call. 
+Every 3 seconds calls NMEA - GGA command to receive the current position
+
+Additional Functions :
+
+All additional functions such as timer initialization and default handler. 
+
+Notes :
+
+- Echo must be turned off for succefull parsing. ( ATE0 )
+- UART polling works much better with HFC enabled.
+- In case of usage of other MCUs Timer initialization must be adjusted according to your MCU.
+
+}
+program Click_GSM_GNSS_PIC32;
+
+uses Click_GSM_GNSS_types, Click_GSM_GNSS_config, Click_GSM_GNSS_timer;
+
+var
+    GSM_CMD_AT : array[3] of char; 
+    GSM_CMD_ATI : array[4] of char; 
+    GSM_CMD_ATE : array[5] of char; 
+    GSM_CMD_IFC : array[12] of char; 
+    GSM_CMD_CMGF : array[10] of char; 
+    GSM_CMD_ATH : array[4] of char; 
+    GSM_CMD_CLCC : array[8] of char; 
+    GNSS_CMD_QGNSSC : array[15] of char; 
+    GNSS_CMD_QGNSSRD : array[25] of char; 
+    
+procedure gsmgnss_default_handler(rsp : ^uint8_t; evArgs : ^uint8_t); 
+var
+    tmp : ^char; 
+begin
+    tmp := rsp; 
+    mikrobus_logWrite(tmp, _LOG_TEXT); 
+end;
+
+procedure systemInit(); 
+begin
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_AN_PIN, _GPIO_INPUT); 
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_PWM_PIN, _GPIO_INPUT); 
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_INT_PIN, _GPIO_INPUT); 
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_RST_PIN, _GPIO_OUTPUT); 
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_CS_PIN, _GPIO_OUTPUT); 
+    mikrobus_uartInit(_MIKROBUS1, @_GSMGNSS_UART_CFG[0]); 
+    mikrobus_logInit(_LOG_USBUART_B, 9600); 
+    mikrobus_logWrite('---- Start Init ----', _LOG_LINE); 
+end;
+
+procedure applicationInit(); 
+begin
+    gsmgnss_configTimer(); 
+    gsmgnss_uartDriverInit(T_GSMGNSS_P(@_MIKROBUS1_GPIO), T_GSMGNSS_P(@_MIKROBUS1_UART)); 
+    gsmgnss_coreInit(@gsmgnss_default_handler, 1500); 
+    gsmgnss_hfcEnable(1); 
+    gsmgnss_modulePower(1); 
+    gsmgnss_cmdSingle(@GSM_CMD_AT[0]); 
+    gsmgnss_cmdSingle(@GSM_CMD_ATI[0]); 
+    gsmgnss_cmdSingle(@GSM_CMD_ATE[0]); 
+    gsmgnss_cmdSingle(@GSM_CMD_IFC[0]); 
+    gsmgnss_cmdSingle(@GSM_CMD_CMGF[0]); 
+    mikrobus_logWrite('---- GSM Init done ---', _LOG_LINE); 
+    gsmgnss_cmdSingle(@GNSS_CMD_QGNSSC[0]); 
+    Delay_ms(3000); 
+    mikrobus_logWrite('---- GNSS Init done ---', _LOG_LINE); 
+    mikrobus_logWrite('---- Please, call me :) ----', _LOG_LINE); 
+end;
+
+procedure applicationTask(); 
+begin
+    gsmgnss_process(); 
+    if (0 = gsmgnss_chackRing()) then 
+    begin
+        gsmgnss_cmdSingle(@GSM_CMD_CLCC[0]); 
+        mikrobus_logWrite('--- Call detected ---', _LOG_LINE); 
+        gsmgnss_cmdSingle(@GSM_CMD_ATH[0]); 
+        Delay_ms(3000); 
+    end; 
+    if (timerCounter > 3000) then 
+    begin
+        gsmgnss_cmdSingle(@GNSS_CMD_QGNSSRD[0]); 
+        timerCounter := 0; 
+    end; 
+end;
+
+begin
+    GSM_CMD_AT := 'AT';
+    GSM_CMD_ATI := 'ATI';
+    GSM_CMD_ATE := 'ATE0';
+    GSM_CMD_IFC := 'AT+IFC=2,2';
+    GSM_CMD_CMGF := 'AT+CMGF=1';
+    GSM_CMD_ATH := 'ATH';
+    GSM_CMD_CLCC := 'AT+CLCC';
+    GNSS_CMD_QGNSSC := 'AT+QGNSSC=1';
+    GNSS_CMD_QGNSSRD := 'AT+QGNSSRD="NMEA/GGA"';
+
+    systemInit(); 
+    applicationInit(); 
+    while (1) do 
+    begin 
+        applicationTask(); 
+    end;
+end.

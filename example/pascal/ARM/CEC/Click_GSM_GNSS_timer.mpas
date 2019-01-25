@@ -1,0 +1,30 @@
+{*
+
+Use mikroE Timer Calculator to generate proper timer configuration
+and timer ISR.
+
+https://www.mikroe.com/timer-calculator
+
+*}
+unit Click_GSM_GNSS_timer;
+
+uses Click_GSM_GNSS_types;
+
+procedure gsmgnss_configTimer(); 
+
+implementation
+
+procedure gsmgnss_configTimer(); 
+begin
+
+
+end;
+
+procedure Timer_interrupt(); 
+begin
+
+    gsmgnss_tick(); 
+
+end;
+
+end.
